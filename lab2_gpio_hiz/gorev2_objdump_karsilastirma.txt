@@ -1,0 +1,8 @@
+LAB 2 - GOREV 2 OBJDUMP KARSILASTIRMASI
+
+gpio_set_level: Her periyotta iki call8 fonksiyon cagrisi; yaklasik 1.34 MHz.
+GPIO yapisi: memw ve s32i.n ile dogrudan register yazma; yaklasik 7.99 MHz.
+Ham register: memw ve s32i.n ile dogrudan register yazma; yaklasik 8.00 MHz.
+
+Sonuc: Dogrudan register erisimi, surucu yonteminden yaklasik 6 kat hizli olculdu.
+Frekanslar CPU cevrimlerinden hesaplanmistir.
