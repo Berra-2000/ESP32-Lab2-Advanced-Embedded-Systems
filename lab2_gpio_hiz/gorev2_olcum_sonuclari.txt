@@ -1,0 +1,12 @@
+LAB 2 - GOREV 2 GPIO HIZ OLCUMLERI
+CPU: 160 MHz | Her tekrarda 10000 periyot
+
+Tekrar | Surucu (cevrim, Hz) | GPIO yapisi (cevrim, Hz) | Ham register (cevrim, Hz)
+1 | 119.00, 1344514 | 20.13, 7948612 | 20.00, 7999160
+2 | 119.00, 1344511 | 20.00, 7999160 | 20.00, 7999160
+3 | 119.00, 1344511 | 20.00, 7999160 | 20.00, 7999160
+4 | 119.00, 1344511 | 20.00, 7999160 | 20.00, 7999160
+5 | 119.00, 1344511 | 20.00, 7999160 | 20.00, 7999160
+
+Sonuc: GPIO yapisi ve ham register yaklasik 6 kat daha hizli.
+Not: Frekanslar CPU dongulerinden hesaplanmistir; fiziksel olcum degildir.
