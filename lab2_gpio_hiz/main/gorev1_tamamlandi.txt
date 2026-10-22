@@ -1,0 +1,53 @@
+#include <stdint.h>
+#include <inttypes.h>
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "soc/soc.h"
+#include "soc/gpio_reg.h"
+#include "soc/io_mux_reg.h"
+#include "../ortak/lab_reg.h"
+
+#define LED_PIN 4
+#define LED_MASK (1U << LED_PIN)
+
+static const char *TAG = "LAB2_GOREV1";
+
+static void register_yazdir(const char *baslik)
+{
+    ESP_LOGI(TAG, "--- %s ---", baslik);
+
+    ESP_LOGI(TAG, "IO_MUX_GPIO4 = 0x%08" PRIx32,
+             REG_READ(IO_MUX_GPIO4_REG));
+
+    ESP_LOGI(TAG, "GPIO_PIN4 = 0x%08" PRIx32,
+             REG_READ(GPIO_PIN4_REG));
+
+    ESP_LOGI(TAG, "FUNC4_OUT_SEL = 0x%08" PRIx32,
+             REG_READ(GPIO_FUNC0_OUT_SEL_CFG_REG + LED_PIN * 4));
+
+    ESP_LOGI(TAG, "ENABLE bit 4 = %" PRIu32,
+             (REG_READ(GPIO_ENABLE_REG) >> LED_PIN) & 1U);
+}
+
+void app_main(void)
+{
+    // Yöntem 1: Register ve düşük seviye pin ayarları
+    gpio_cikis_ayarla(LED_PIN);
+
+    register_yazdir("Register ile ayar");
+
+    // Yöntem 2: ESP-IDF sürücüsü
+    gpio_config_t io = {
+        .pin_bit_mask = (1ULL << LED_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    ESP_ERROR_CHECK(gpio_config(&io));
+
+    register_yazdir("gpio_config() ile ayar");
+
+    gpio_set_level(LED_PIN, 0);
+}

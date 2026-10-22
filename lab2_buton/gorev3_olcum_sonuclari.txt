@@ -1,0 +1,10 @@
+LAB 2 - GOREV 3: BUTON SICRAMA OLCUMLERI
+
+1 ms filtre:
+11 kenar grubu, 9 tek kenarli, 2 coklu kenarli.
+Coklu kenar olcumleri: 3 kenar / 42 us, 2 kenar / 56 us.
+
+50 ms filtre:
+10 kenar grubu, tamaminda 1 kenar ve 0 us.
+
+Not: Bu degerler kaydedilen kenar gruplarini gosterir; fiziksel sicramanin tamamen yok oldugunu kanitlamaz.

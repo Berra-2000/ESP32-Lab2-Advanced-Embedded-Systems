@@ -1,0 +1,214 @@
+#include <math.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gptimer.h"
+#include "driver/gpio.h"
+#include "esp_timer.h"
+#include "esp_log.h"
+#include "esp_err.h"
+
+#define GPT_PIN 4
+#define ESP_PIN 5
+#define PERIYOT_US 1000
+#define ORNEK_SAYISI 4000
+#define WIFI_YUKU 0
+
+static const char *TAG = "LAB2_ZAMANLAYICI";
+
+static gptimer_handle_t gptimer = NULL;
+static esp_timer_handle_t yazilim_timer = NULL;
+
+static volatile uint32_t gpt_sayac = 0;
+static volatile uint32_t esp_sayac = 0;
+
+static volatile int64_t gpt_son_zaman = 0;
+static volatile int64_t esp_son_zaman = 0;
+
+static volatile int64_t gpt_toplam_sapma = 0;
+static volatile int64_t esp_toplam_sapma = 0;
+
+static volatile int64_t gpt_en_buyuk_sapma = 0;
+static volatile int64_t esp_en_buyuk_sapma = 0;
+static volatile uint32_t gpt_ornek = 0;
+static volatile uint64_t gpt_toplam_periyot = 0;
+static volatile uint64_t gpt_kare_sapma = 0;
+static volatile int64_t gpt_min = INT64_MAX;
+static volatile int64_t gpt_max = 0;
+static volatile uint32_t gpt_hist[5] = {0};
+
+static bool IRAM_ATTR gptimer_callback(
+    gptimer_handle_t timer,
+    const gptimer_alarm_event_data_t *edata,
+    void *user_ctx)
+{
+    int64_t simdi = esp_timer_get_time();
+
+    if (gpt_son_zaman != 0 && gpt_ornek < ORNEK_SAYISI) {
+        int64_t periyot = simdi - gpt_son_zaman;
+        int64_t sapma = periyot - PERIYOT_US;
+        int64_t mutlak = sapma < 0 ? -sapma : sapma;
+
+        gpt_toplam_periyot += periyot;
+        gpt_kare_sapma += (uint64_t)(sapma * sapma);
+        if (periyot < gpt_min) gpt_min = periyot;
+        if (periyot > gpt_max) gpt_max = periyot;
+
+        int kutu = mutlak <= 1 ? 0 :
+                   mutlak <= 5 ? 1 :
+                   mutlak <= 10 ? 2 :
+                   mutlak <= 50 ? 3 : 4;
+        gpt_hist[kutu]++;
+        gpt_ornek++;
+    }
+
+    gpt_son_zaman = simdi;
+    gpt_sayac++;
+    return false;
+}
+
+static void gptimer_baslat(void)
+{
+    gptimer_config_t ayar = {
+        .clk_src = GPTIMER_CLK_SRC_DEFAULT,
+        .direction = GPTIMER_COUNT_UP,
+        .resolution_hz = 1000000
+    };
+
+    ESP_ERROR_CHECK(gptimer_new_timer(&ayar, &gptimer));
+
+    gptimer_event_callbacks_t callbacks = {
+        .on_alarm = gptimer_callback
+    };
+
+    ESP_ERROR_CHECK(
+        gptimer_register_event_callbacks(
+            gptimer, &callbacks, NULL
+        )
+    );
+
+    gptimer_alarm_config_t alarm = {
+        .alarm_count = PERIYOT_US,
+        .reload_count = 0,
+        .flags.auto_reload_on_alarm = true
+    };
+
+    ESP_ERROR_CHECK(
+        gptimer_set_alarm_action(gptimer, &alarm)
+    );
+
+    ESP_ERROR_CHECK(gptimer_enable(gptimer));
+    ESP_ERROR_CHECK(gptimer_start(gptimer));
+}static volatile uint32_t esp_ornek = 0;
+static volatile uint64_t esp_toplam_periyot = 0;
+static volatile uint64_t esp_kare_sapma = 0;
+static volatile int64_t esp_min = INT64_MAX;
+static volatile int64_t esp_max = 0;
+static volatile uint32_t esp_hist[5] = {0};
+
+static void esp_timer_callback(void *arg)
+{
+    int64_t simdi = esp_timer_get_time();
+
+    if (esp_son_zaman != 0 && esp_ornek < ORNEK_SAYISI) {
+        int64_t periyot = simdi - esp_son_zaman;
+        int64_t sapma = periyot - PERIYOT_US;
+        int64_t mutlak = sapma < 0 ? -sapma : sapma;
+
+        esp_toplam_periyot += periyot;
+        esp_kare_sapma += (uint64_t)(sapma * sapma);
+        if (periyot < esp_min) esp_min = periyot;
+        if (periyot > esp_max) esp_max = periyot;
+
+        int kutu = mutlak <= 1 ? 0 :
+                   mutlak <= 5 ? 1 :
+                   mutlak <= 10 ? 2 :
+                   mutlak <= 50 ? 3 : 4;
+        esp_hist[kutu]++;
+        esp_ornek++;
+    }
+
+    esp_son_zaman = simdi;
+    esp_sayac++;
+}
+
+static void esp_timer_baslat(void)
+{
+    esp_timer_create_args_t ayar = {
+        .callback = esp_timer_callback,
+        .name = "lab2_esp_timer"
+    };
+
+    ESP_ERROR_CHECK(
+        esp_timer_create(&ayar, &yazilim_timer)
+    );
+
+    ESP_ERROR_CHECK(
+        esp_timer_start_periodic(
+            yazilim_timer, PERIYOT_US
+        )
+    );
+}
+void app_main(void)
+{
+    gpio_config_t gpio_ayar = {
+        .pin_bit_mask = (1ULL << GPT_PIN) | (1ULL << ESP_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    ESP_ERROR_CHECK(gpio_config(&gpio_ayar));
+
+    ESP_LOGI(TAG, "Hedef periyot: %d us", PERIYOT_US);
+    ESP_LOGI(TAG, "Olcum basliyor...");
+
+    gptimer_baslat();
+    esp_timer_baslat();
+
+    vTaskDelay(pdMS_TO_TICKS(4000));
+
+    ESP_ERROR_CHECK(gptimer_stop(gptimer));
+    ESP_ERROR_CHECK(esp_timer_stop(yazilim_timer));
+
+    ESP_LOGI(TAG, "GPTimer callback sayisi: %" PRIu32,
+             gpt_sayac);
+    ESP_LOGI(TAG, "esp_timer callback sayisi: %" PRIu32,
+             esp_sayac);
+
+    ESP_LOGI(TAG, "===== ISTATISTIK SONUCLARI =====");
+
+    if (gpt_ornek > 0 && esp_ornek > 0) {
+        double gm = (double)gpt_toplam_periyot / gpt_ornek;
+        double em = (double)esp_toplam_periyot / esp_ornek;
+
+        double gs = sqrt((double)gpt_kare_sapma / gpt_ornek
+                         - (gm - PERIYOT_US) * (gm - PERIYOT_US));
+        double es = sqrt((double)esp_kare_sapma / esp_ornek
+                         - (em - PERIYOT_US) * (em - PERIYOT_US));
+
+        ESP_LOGI(TAG, "GPTimer: n=%lu ort=%.2f us std=%.2f us min=%lld max=%lld",
+                 (unsigned long)gpt_ornek, gm, gs,
+                 (long long)gpt_min, (long long)gpt_max);
+
+        ESP_LOGI(TAG, "esp_timer: n=%lu ort=%.2f us std=%.2f us min=%lld max=%lld",
+                 (unsigned long)esp_ornek, em, es,
+                 (long long)esp_min, (long long)esp_max);
+
+        ESP_LOGI(TAG, "Histogram |sapma|: <=1, 2-5, 6-10, 11-50, >50 us");
+        ESP_LOGI(TAG, "GPTimer: %lu %lu %lu %lu %lu",
+                 (unsigned long)gpt_hist[0], (unsigned long)gpt_hist[1],
+                 (unsigned long)gpt_hist[2], (unsigned long)gpt_hist[3],
+                 (unsigned long)gpt_hist[4]);
+        ESP_LOGI(TAG, "esp_timer: %lu %lu %lu %lu %lu",
+                 (unsigned long)esp_hist[0], (unsigned long)esp_hist[1],
+                 (unsigned long)esp_hist[2], (unsigned long)esp_hist[3],
+                 (unsigned long)esp_hist[4]);
+    }
+
+    ESP_LOGI(TAG, "Ilk test tamamlandi.");
+}

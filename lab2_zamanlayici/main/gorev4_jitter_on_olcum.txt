@@ -1,0 +1,163 @@
+#include <stdio.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gptimer.h"
+#include "driver/gpio.h"
+#include "esp_timer.h"
+#include "esp_log.h"
+#include "esp_err.h"
+
+#define GPT_PIN 4
+#define ESP_PIN 5
+#define PERIYOT_US 1000
+#define ORNEK_SAYISI 4000
+#define WIFI_YUKU 0
+
+static const char *TAG = "LAB2_ZAMANLAYICI";
+
+static gptimer_handle_t gptimer = NULL;
+static esp_timer_handle_t yazilim_timer = NULL;
+
+static volatile uint32_t gpt_sayac = 0;
+static volatile uint32_t esp_sayac = 0;
+
+static volatile int64_t gpt_son_zaman = 0;
+static volatile int64_t esp_son_zaman = 0;
+
+static volatile int64_t gpt_toplam_sapma = 0;
+static volatile int64_t esp_toplam_sapma = 0;
+
+static volatile int64_t gpt_en_buyuk_sapma = 0;
+static volatile int64_t esp_en_buyuk_sapma = 0;
+static bool IRAM_ATTR gptimer_callback(
+    gptimer_handle_t timer,
+    const gptimer_alarm_event_data_t *edata,
+    void *user_ctx)
+{
+    int64_t simdi = esp_timer_get_time();
+
+    if (gpt_son_zaman != 0 && gpt_sayac < ORNEK_SAYISI) {
+        int64_t sapma = simdi - gpt_son_zaman - PERIYOT_US;
+        gpt_toplam_sapma += sapma;
+
+        int64_t mutlak = sapma < 0 ? -sapma : sapma;
+        if (mutlak > gpt_en_buyuk_sapma) {
+            gpt_en_buyuk_sapma = mutlak;
+        }
+    }
+
+    gpt_son_zaman = simdi;
+    gpt_sayac++;
+    return false;
+}
+
+static void gptimer_baslat(void)
+{
+    gptimer_config_t ayar = {
+        .clk_src = GPTIMER_CLK_SRC_DEFAULT,
+        .direction = GPTIMER_COUNT_UP,
+        .resolution_hz = 1000000
+    };
+
+    ESP_ERROR_CHECK(gptimer_new_timer(&ayar, &gptimer));
+
+    gptimer_event_callbacks_t callbacks = {
+        .on_alarm = gptimer_callback
+    };
+
+    ESP_ERROR_CHECK(
+        gptimer_register_event_callbacks(
+            gptimer, &callbacks, NULL
+        )
+    );
+
+    gptimer_alarm_config_t alarm = {
+        .alarm_count = PERIYOT_US,
+        .reload_count = 0,
+        .flags.auto_reload_on_alarm = true
+    };
+
+    ESP_ERROR_CHECK(
+        gptimer_set_alarm_action(gptimer, &alarm)
+    );
+
+    ESP_ERROR_CHECK(gptimer_enable(gptimer));
+    ESP_ERROR_CHECK(gptimer_start(gptimer));
+}static void esp_timer_callback(void *arg)
+{
+    int64_t simdi = esp_timer_get_time();
+
+    if (esp_son_zaman != 0 && esp_sayac < ORNEK_SAYISI) {
+        int64_t sapma = simdi - esp_son_zaman - PERIYOT_US;
+        esp_toplam_sapma += sapma;
+
+        int64_t mutlak = sapma < 0 ? -sapma : sapma;
+        if (mutlak > esp_en_buyuk_sapma) {
+            esp_en_buyuk_sapma = mutlak;
+        }
+    }
+
+    esp_son_zaman = simdi;
+    esp_sayac++;
+}
+
+static void esp_timer_baslat(void)
+{
+    esp_timer_create_args_t ayar = {
+        .callback = esp_timer_callback,
+        .name = "lab2_esp_timer"
+    };
+
+    ESP_ERROR_CHECK(
+        esp_timer_create(&ayar, &yazilim_timer)
+    );
+
+    ESP_ERROR_CHECK(
+        esp_timer_start_periodic(
+            yazilim_timer, PERIYOT_US
+        )
+    );
+}
+void app_main(void)
+{
+    gpio_config_t gpio_ayar = {
+        .pin_bit_mask = (1ULL << GPT_PIN) | (1ULL << ESP_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+
+    ESP_ERROR_CHECK(gpio_config(&gpio_ayar));
+
+    ESP_LOGI(TAG, "Hedef periyot: %d us", PERIYOT_US);
+    ESP_LOGI(TAG, "Olcum basliyor...");
+
+    gptimer_baslat();
+    esp_timer_baslat();
+
+    vTaskDelay(pdMS_TO_TICKS(4000));
+
+    ESP_ERROR_CHECK(gptimer_stop(gptimer));
+    ESP_ERROR_CHECK(esp_timer_stop(yazilim_timer));
+
+    ESP_LOGI(TAG, "GPTimer callback sayisi: %" PRIu32,
+             gpt_sayac);
+    ESP_LOGI(TAG, "esp_timer callback sayisi: %" PRIu32,
+             esp_sayac);
+
+    ESP_LOGI(TAG, "===== JITTER SONUCLARI =====");
+    ESP_LOGI(TAG, "GPTimer ortalama sapma: %.2f us",
+             (double)gpt_toplam_sapma / (gpt_sayac - 1));
+    ESP_LOGI(TAG, "GPTimer maksimum mutlak sapma: %lld us",
+             (long long)gpt_en_buyuk_sapma);
+    ESP_LOGI(TAG, "esp_timer ortalama sapma: %.2f us",
+             (double)esp_toplam_sapma / (esp_sayac - 1));
+    ESP_LOGI(TAG, "esp_timer maksimum mutlak sapma: %lld us",
+             (long long)esp_en_buyuk_sapma);
+
+    ESP_LOGI(TAG, "Ilk test tamamlandi.");
+}
